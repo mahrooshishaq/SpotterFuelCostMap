@@ -1,0 +1,15 @@
+data/raw/*
+!data/raw/.gitkeep
+data/geocoding/*
+!data/geocoding/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+db.sqlite3
+.env
+staticfiles/
+fuel-prices-for-be-assessment.csv
+fuel_stop_planner_complete_system_design.md

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuel Stop Planner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    main { max-width: 1100px; margin: 1rem auto; padding: 0 1rem; }
+    form { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .75rem; align-items: end; }
+    label { display: grid; gap: .25rem; }
+    input { box-sizing: border-box; padding: .45rem; width: 100%; }
+    button { padding: .5rem .9rem; }
+    #map { height: 65vh; margin-top: 1rem; }
+    #status { white-space: pre-wrap; margin-top: .75rem; font-weight: 600; }
+    #legend, #stops { margin-top: .75rem; }
+    #legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .9rem; }
+    .legend-item { display: inline-flex; align-items: center; gap: .35rem; }
+    .legend-dot { width: .8rem; height: .8rem; border-radius: 50%; display: inline-block; }
+    .start-dot { background: #1976d2; }
+    .destination-dot { background: #c62828; }
+    .stop-dot { background: #2e7d32; }
+    #stops:empty { display: none; }
+    .stop-card { border: 1px solid #ddd; border-radius: .35rem; padding: .6rem; margin-top: .4rem; }
+    .stop-card strong { display: block; }
+    .marker-label { color: white; font-weight: 700; text-align: center; line-height: 28px; }
+    .start-marker, .destination-marker, .stop-marker {
+      border: 2px solid white; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+      box-shadow: 0 1px 4px #555;
+    }
+    .start-marker { background: #1976d2; }
+    .destination-marker { background: #c62828; }
+    .stop-marker { background: #2e7d32; }
+    .marker-label { transform: rotate(45deg); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Fuel Stop Planner</h1>
+  <p>Enter US place names, such as “Birmingham, Alabama” or “Atlanta, Georgia”.</p>
+  <form id="route-form">
+    <label>Start location<input id="start-place" value="Birmingham, Alabama" required></label>
+    <label>Destination<input id="end-place" value="Atlanta, Georgia" required></label>
+    <button type="submit">Plan route</button>
+  </form>
+  <div id="status" role="status"></div>
+  <div id="legend" aria-label="Map legend">
+    <span class="legend-item"><span class="legend-dot start-dot"></span>Start</span>
+    <span class="legend-item"><span class="legend-dot destination-dot"></span>Destination</span>
+    <span class="legend-item"><span class="legend-dot stop-dot"></span>Selected refuel stop</span>
+  </div>
+  <section id="stops" aria-live="polite"></section>
+  <div id="map"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([33, -85.5], 7);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri'
+  }).addTo(map);
+  let layers = L.layerGroup().addTo(map);
+  const status = document.getElementById('status');
+  const stopsPanel = document.getElementById('stops');
+  const markerIcon = (className, label) => L.divIcon({
+    className: '',
+    html: `<div class="${className}" style="width:28px;height:28px"><div class="marker-label">${label}</div></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 28],
+    popupAnchor: [0, -28]
+  });
+  async function lookupPlace(place) {
+    const response = await fetch('/api/v1/place-lookup/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({place})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Place lookup failed');
+    return data;
+  }
+  document.getElementById('route-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    layers.clearLayers();
+    stopsPanel.replaceChildren();
+    try {
+      status.textContent = 'Finding locations...';
+      const start = await lookupPlace(document.getElementById('start-place').value);
+      await new Promise(resolve => setTimeout(resolve, 1100));
+      const destination = await lookupPlace(document.getElementById('end-place').value);
+      status.textContent = 'Loading driving route...';
+      const body = {
+        start: {longitude: start.longitude, latitude: start.latitude},
+        destination: {longitude: destination.longitude, latitude: destination.latitude}
+      };
+      const response = await fetch('/api/v1/route-plan/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || data.code || 'Request failed');
+      const route = L.geoJSON(data.route.geometry, {style: {color: '#1769aa', weight: 5}})
+        .addTo(layers);
+      const bounds = route.getBounds();
+      L.marker([body.start.latitude, body.start.longitude])
+        .setIcon(markerIcon('start-marker', 'S'))
+        .bindPopup(`<b>START</b><br>${start.place}`).addTo(layers);
+      L.marker([body.destination.latitude, body.destination.longitude])
+        .setIcon(markerIcon('destination-marker', 'D'))
+        .bindPopup(`<b>DESTINATION</b><br>${destination.place}`).addTo(layers);
+      data.stops.forEach(stop => {
+        L.marker([stop.latitude, stop.longitude])
+          .setIcon(markerIcon('stop-marker', String(stop.stop_order)))
+          .bindPopup(`<b>${stop.stop_order}. ${stop.name}</b><br>Price: ${stop.provided_price}<br>Cost: ${stop.estimated_purchase_cost}`)
+          .addTo(layers);
+        const card = document.createElement('div');
+        card.className = 'stop-card';
+        card.innerHTML = `<strong>Selected refuel stop ${stop.stop_order}: ${stop.name}</strong>` +
+          `${stop.city}, ${stop.state} | ${stop.route_position_miles.toFixed(1)} route miles<br>` +
+          `Provided price: ${stop.provided_price} | ` +
+          `Fuel purchased: ${stop.gallons_purchased.toFixed(2)} gallons | ` +
+          `Estimated cost: ${stop.estimated_purchase_cost.toFixed(2)}`;
+        stopsPanel.appendChild(card);
+      });
+      const explanation = document.createElement('p');
+      explanation.textContent =
+        `The vehicle starts with a full 50-gallon tank. ` +
+        `${data.summary.total_route_fuel_gallons.toFixed(2)} gallons are consumed ` +
+        `on the route; only ${data.summary.total_purchased_gallons.toFixed(2)} ` +
+        `gallons are purchased during the trip.`;
+      stopsPanel.prepend(explanation);
+      map.fitBounds(bounds.pad(.1));
+      const startingFuel = data.summary.starting_tank_gallons;
+      const routeFuel = data.summary.total_route_fuel_gallons;
+      const purchasedFuel = data.summary.total_purchased_gallons;
+      status.textContent = `Distance: ${data.route.distance_miles.toFixed(1)} miles | ` +
+        `Selected refuel stops: ${data.summary.selected_stop_count} | ` +
+        `Total purchase cost: ${data.summary.total_purchase_cost.toFixed(2)} ` +
+        `(provided price data)\n` +
+        `Fuel: ${routeFuel.toFixed(2)} gallons consumed | ` +
+        `${startingFuel.toFixed(2)} gallons starting tank | ` +
+        `${purchasedFuel.toFixed(2)} gallons purchased`;
+    } catch (error) {
+      status.textContent = `Error: ${error.message}`;
+    }
+  });
+</script>
+</body>
+</html>
