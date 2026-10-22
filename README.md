@@ -1,10 +1,5 @@
 # Fuel Stop Planner
 
-## Current milestone
-
-Milestone 1 created the reproducible CSV outputs. Milestone 2, task 1
-created the Django project (`config`) and application (`planner`).
-
 ## Development setup
 
 Create or activate the virtual environment, then install dependencies:
@@ -16,8 +11,8 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-The Django dependency range accepts the latest stable Django release
-supported by the project. PostgreSQL connectivity uses Psycopg 3.
+The project targets Django 5.2 or a later compatible Django release below
+version 7. PostgreSQL connectivity uses Psycopg 3.
 
 ## Database configuration
 
@@ -163,6 +158,24 @@ that tile. Use `--tile-size 1` for smaller requests if needed.
 If a public endpoint remains unavailable for a tile, add `--allow-partial`;
 the command will keep completed tiles, report failed tiles, and still produce
 a match report.
+
+## Performance and external API usage
+
+The route-planning API makes one OSRM request for each uncached
+origin/destination coordinate pair. Successful normalized routes are cached
+for one hour, so repeated requests for the same pair do not call OSRM again.
+Station matching and fuel optimization run locally against SQLite and do not
+call an external service.
+
+The browser's friendly place-name form makes two sequential Nominatim lookup
+requests—one for the start and one for the destination—before making the
+single OSRM route request. The short delay between those lookups respects the
+public geocoding service's usage policy. API clients that already have
+coordinates can call the route endpoint directly and avoid those lookups.
+
+The route response includes full GeoJSON geometry for map rendering. This is
+more data than the summary fields but avoids a second route request for the
+frontend.
 
 ## Routing service
 
@@ -334,27 +347,3 @@ The live map distinguishes the blue `S` start marker, red `D` destination
 marker, and green numbered selected-refuel markers. The stop cards below the
 map show each selected station, route position, provided price, gallons
 purchased, and estimated cost.
-
-## Five-minute Loom outline
-
-1. **0:00–0:30 — Goal:** “This Django application plans a driving route and
-   selects the least-cost feasible fuel stops using supplied station prices.”
-2. **0:30–1:10 — Data:** Show `scripts\prepare_fuel_data.py` and explain that
-   the original company CSV is preserved, Canadian rows and invalid records
-   are excluded, duplicates are resolved, and the cleaned records are
-   imported into SQLite.
-3. **1:10–1:45 — Backend:** Show `planner\models.py` and
-   `planner\services\station_matching.py`. Explain that prices come from the
-   company CSV while station coordinates come from validated coordinate
-   enrichment, and only stations within the route corridor are eligible.
-4. **1:45–2:25 — Optimization:** Show
-   `planner\services\fuel_planning.py`. Explain the 500-mile range, 10 MPG,
-   50-gallon starting tank, full-refill model, and route-ordered dynamic
-   programming that compares feasible station sequences by total purchase cost.
-5. **2:25–4:25 — Demo:** Run the three scenarios above. For the long route,
-   point out the S/D markers, green numbered stops, per-stop gallons/cost, and
-   total purchase cost. For the short routes, point out zero selected stops
-   and zero purchase cost.
-6. **4:25–5:00 — API/tests/limitations:** Briefly show `/api/docs/`, mention
-   OSRM supplies driving geometry, and state that prices are provided dataset
-   values and coordinate coverage is limited to validated station records.

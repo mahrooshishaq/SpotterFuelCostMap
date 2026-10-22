@@ -5,7 +5,11 @@ from django.shortcuts import render
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 
 from .models import FuelStation
-from .serializers import PlaceLookupSerializer, RoutePlanRequestSerializer
+from .serializers import (
+    PlaceLookupSerializer,
+    RoutePlanRequestSerializer,
+    RoutePlanResponseSerializer,
+)
 from .services.geocoding import GeocodingError, geocode_place
 from .services.fuel_planning import InfeasibleFuelPlanError, plan_fuel_stops
 from .services.fuel_planning import TANK_CAPACITY_GALLONS
@@ -43,7 +47,7 @@ class RoutePlanView(APIView):
     @extend_schema(
         request=RoutePlanRequestSerializer,
         responses={
-            200: OpenApiResponse(description="Route and optimized fuel-stop plan."),
+            200: RoutePlanResponseSerializer,
             400: OpenApiResponse(description="Invalid coordinates or request."),
             422: OpenApiResponse(description="No feasible fuel-stop sequence."),
             502: OpenApiResponse(description="Routing provider failure."),

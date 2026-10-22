@@ -44,6 +44,8 @@ class RoutePlanApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["route"]["geometry"]["type"], "LineString")
         self.assertEqual(response.data["summary"]["selected_stop_count"], 0)
+        self.assertEqual(response.data["summary"]["starting_tank_gallons"], 50.0)
+        self.assertEqual(response.data["summary"]["total_purchased_gallons"], 0.0)
         get_route.assert_called_once()
 
     def test_invalid_request_is_rejected(self):
